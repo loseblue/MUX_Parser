@@ -1,0 +1,238 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Frameset//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd">  
+<html xmlns="http://www.w3.org/1999/xhtml">  
+    <head>  
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />  
+        <title>MUX Packet tool</title>  
+    </head>  
+    <body>  
+        <div>  
+            Input MUX Packet:  
+            <input type="text" id="muxPacketStr"></input>  
+            <input type="button" id="muxDecodeBtn" value="Decode" onClick="muxDecode()"></input>  
+        </div>  
+        <div>  
+            Result:<br />  
+            <textarea id="muxResult" cols="100" rows="10"></textarea>  
+  
+        </div>  
+    </body>  
+    <script type="text/javascript">  
+        if (typeof smT=="undefined"){  
+            var smT = {  
+BEGINFLG: 1,  
+      ADDR: 2,  
+      CTRL: 3,  
+      LEN_LO: 4,  
+      LEN_HI: 5,  
+      INFO: 6,  
+      FCS: 7,  
+      ENDFLG: 8,  
+            }  
+        }  
+  
+var sm=smT.BEGINFLG;  
+var srcStr="";  
+var dstStr="";  
+var dataLen=0;  
+  
+  
+function setResult(str){  
+    document.getElementById("muxResult").value = str;  
+}  
+function resultAdd(str) {  
+    dstStr=dstStr+str;  
+}  
+    function flagHandle(data, type){  
+        if (data == 0xF9)  
+        {  
+            sm++;  
+            //alert("get basic flag");  
+            resultAdd("BASIC mode\t"+type+"\n");  
+  
+        }  
+    }  
+  
+function addrHandle(data){  
+    var bitStr = parseInt(data).toString(2);  
+    while (bitStr.length < 8)  
+    {  
+        bitStr = "0"+bitStr;  
+    }  
+    //alert(bitStr);  
+  
+    var DLCI = bitStr.substr(0, 6);  
+    var chanID = parseInt(DLCI, 2);  
+    resultAdd("Channel:\t"+chanID+"\n");  
+  
+    resultAdd("Direction:\t");  
+    var CR = bitStr.substr(6, 1);  
+    if (CR == "1")  {  
+        resultAdd("C->S\n");  
+    }  
+    else {  
+        resultAdd("C<-S\n");  
+    }  
+  
+    var EA = bitStr.substr(7, 1);  
+    if (EA == "1"){  
+        sm++;  
+    }  
+    else {  
+        alert("Address Fieled EA err");  
+    }  
+}  
+  
+function ctrlHandle(data){  
+    var bitStr = parseInt(data).toString(2);  
+    while (bitStr.length < 8)  
+    {  
+        bitStr = "0"+bitStr;  
+    }  
+  
+    sm++;  
+  
+    var PF = bitStr.substr(3, 1);  
+    resultAdd("PF:\t\t"+PF+"\n");  
+    resultAdd("Frame Type:\t");  
+  
+    bitStr = bitStr.substring(0, 3)+'0'+bitStr.substring(4, 8);  
+    if (bitStr == "00101111") {  
+        resultAdd("SABM");  
+    }  
+    else if (bitStr == "01100011") {  
+        resultAdd("UA");  
+    }  
+    else if (bitStr == "00001111") {  
+        resultAdd("DM");  
+    }  
+    else if (bitStr == "01000011") {  
+        resultAdd("DISC");  
+    }  
+    else if (bitStr == "11101111") {  
+        resultAdd("UIH");  
+    }  
+    else if (bitStr == "00000011") {  
+        resultAdd("UI");  
+    }  
+    else {  
+        alert("unknown type:"+bitStr);  
+    }  
+  
+    resultAdd("\n");  
+  
+}  
+  
+function lenHandle(len, type){  
+    if (type == "hi") {  
+        sm++;  
+        dataLen += len*128;  
+        resultAdd("Data Length:\t"+dataLen+"\n");  
+    }  
+    else{  
+        //alert(len/2|0);  
+        dataLen+=len/2|0;  
+  
+        if (len % 2 == 0){  
+            sm++;  
+        }  
+        else {  
+            sm+=2;  
+            resultAdd("Data Length:\t"+dataLen+"\n");  
+        }  
+    }  
+}  
+  
+function infoHandle(str, len)  
+{  
+    var sLen = 0;  
+  
+    while ((sLen < str.length) && (len > 0))  
+    {  
+        if (str.substr(sLen, 1) == " ")  
+        {  
+        }  
+        else  
+        {  
+            len -= 1/2;  
+        }  
+        sLen++;  
+    }  
+  
+    resultAdd("Infomation:\t");  
+    resultAdd(str.substr(0, sLen));  
+    resultAdd("\n");  
+    return sLen;  
+  
+}  
+  
+function muxDecode(){  
+  
+    var i = 0;  
+    var data;  
+    dataLen = 0;  
+  
+    srcStr=document.getElementById("muxPacketStr").value;  
+    dstStr="";  
+    setResult("");  
+    sm=smT.BEGINFLG;  
+  
+    while(i < srcStr.length)  
+    {  
+        /* skip spaces */  
+        while (srcStr.substr(i, 1) == " ")  
+        {  
+            i++;  
+        }  
+  
+        /* get char */  
+        var curStr = srcStr.substr(i, 2);  
+        data = parseInt(curStr, 16);  
+  
+        /* handle char */  
+        switch (sm) {  
+            case smT.BEGINFLG:  
+                flagHandle(data, "BEGIN");  
+                break;  
+            case smT.ADDR:  
+                addrHandle(data);  
+                break;  
+            case smT.CTRL:  
+                ctrlHandle(data);  
+                break;  
+            case smT.LEN_LO:  
+                lenHandle(data, "lo");  
+                break;  
+            case smT.LEN_HI:  
+                lenHandle(data, "hi");  
+                break;  
+            case smT.INFO:  
+                var infoLen = infoHandle(srcStr.substr(i), dataLen);  
+                sm++;  
+                break;  
+            case smT.FCS:  
+                sm++;  
+                break;  
+            case smT.ENDFLG:  
+                flagHandle(data, "END");  
+                sm=smT.BEGINFLG;  
+                break;  
+  
+        }  
+        if (sm == smT.FCS)  
+        {  
+            i+=infoLen;  
+        }  
+        else  
+        {  
+            i+=2;  
+        }  
+  
+  
+    }  
+  
+    setResult(dstStr);  
+}  
+</script>  
+  
+</html>  
+
